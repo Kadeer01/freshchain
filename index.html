@@ -10,6 +10,7 @@
     input, select { padding: 6px; margin-top: 6px; }
     .box { margin-bottom: 25px; }
     pre { background: #f3f3f3; padding: 12px; }
+    #status { padding: 10px; background: #f8f8f8; color: #b00000; margin-top: 10px; }
   </style>
 </head>
 <body>
@@ -19,6 +20,7 @@
 <button id="connectButton">Connect MetaMask</button>
 <p id="accountDisplay">Not connected</p>
 <p id="networkDisplay">Network: -</p>
+<p id="status">Status: idle</p>
 
 <hr>
 
@@ -98,210 +100,283 @@
   <pre id="historyOutput"></pre>
 </div>
 
-<!-- ✅ STABLE ETHERS -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+<!-- Load Ethers.js (UMD build) -->
+<script src="https://unpkg.com/ethers@5.7.2/dist/ethers.umd.min.js" crossorigin="anonymous"></script>
 
 <script>
-/* ================= CONFIG ================= */
-const contractAddress = "0x0674873cF7Ca21d0d88cD075C0E52Bc0853c1Ad6";
-const SEPOLIA_CHAIN_ID = 11155111;
+window.addEventListener("load", () => {
+  const statusEl   = document.getElementById("status");
+  const connectBtn = document.getElementById("connectButton");
+  const accountEl  = document.getElementById("accountDisplay");
+  const networkEl  = document.getElementById("networkDisplay");
+  const roleSelect = document.getElementById("roleSelect");
 
-/* ================= ABI (FULL) ================= */
-const contractABI = [
-  {
-    "inputs":[
-      {"internalType":"uint256","name":"batchId","type":"uint256"},
-      {"internalType":"int256","name":"temperature","type":"int256"},
-      {"internalType":"int256","name":"humidity","type":"int256"},
-      {"internalType":"string","name":"location","type":"string"}
-    ],
-    "name":"addSensorData",
-    "outputs":[],
-    "stateMutability":"nonpayable",
-    "type":"function"
-  },
-  {
-    "inputs":[
-      {"internalType":"uint256","name":"batchId","type":"uint256"},
-      {"internalType":"string","name":"productName","type":"string"},
-      {"internalType":"uint256","name":"quantity","type":"uint256"}
-    ],
-    "name":"createBatch",
-    "outputs":[],
-    "stateMutability":"nonpayable",
-    "type":"function"
-  },
-  {
-    "inputs":[
-      {"internalType":"uint256","name":"batchId","type":"uint256"},
-      {"internalType":"bool","name":"passedInspection","type":"bool"}
-    ],
-    "name":"markAsArrived",
-    "outputs":[],
-    "stateMutability":"nonpayable",
-    "type":"function"
-  },
-  {
-    "inputs":[{"internalType":"address","name":"producer","type":"address"}],
-    "name":"registerProducer",
-    "outputs":[],
-    "stateMutability":"nonpayable",
-    "type":"function"
-  },
-  {
-    "inputs":[{"internalType":"address","name":"transporter","type":"address"}],
-    "name":"registerTransporter",
-    "outputs":[],
-    "stateMutability":"nonpayable",
-    "type":"function"
-  },
-  {
-    "inputs":[{"internalType":"address","name":"distributor","type":"address"}],
-    "name":"registerDistributor",
-    "outputs":[],
-    "stateMutability":"nonpayable",
-    "type":"function"
-  },
-  {
-    "inputs":[{"internalType":"address","name":"retailer","type":"address"}],
-    "name":"registerRetailer",
-    "outputs":[],
-    "stateMutability":"nonpayable",
-    "type":"function"
-  },
-  {
-    "inputs":[
-      {"internalType":"uint256","name":"batchId","type":"uint256"},
-      {"internalType":"address","name":"newOwner","type":"address"}
-    ],
-    "name":"transferOwnership",
-    "outputs":[],
-    "stateMutability":"nonpayable",
-    "type":"function"
-  },
-  {
-    "inputs":[{"internalType":"uint256","name":"batchId","type":"uint256"}],
-    "name":"getBatchHistory",
-    "outputs":[
-      {
-        "components":[
-          {"internalType":"uint256","name":"batchId","type":"uint256"},
-          {"internalType":"string","name":"productName","type":"string"},
-          {"internalType":"uint256","name":"quantity","type":"uint256"},
-          {"internalType":"address","name":"currentOwner","type":"address"},
-          {"internalType":"bool","name":"created","type":"bool"},
-          {"internalType":"bool","name":"arrived","type":"bool"},
-          {"internalType":"bool","name":"passedInspection","type":"bool"},
-          {
-            "components":[
-              {"internalType":"int256","name":"temperature","type":"int256"},
-              {"internalType":"int256","name":"humidity","type":"int256"},
-              {"internalType":"string","name":"location","type":"string"},
-              {"internalType":"uint256","name":"timestamp","type":"uint256"}
-            ],
-            "internalType":"struct FreshChain.SensorLog[]",
-            "name":"sensorHistory",
-            "type":"tuple[]"
-          },
-          {
-            "internalType":"address[]",
-            "name":"ownershipHistory",
-            "type":"address[]"
-          }
-        ],
-        "internalType":"struct FreshChain.Batch",
-        "name":"",
-        "type":"tuple"
-      }
-    ],
-    "stateMutability":"view",
-    "type":"function"
+  // Make sure ethers is actually loaded
+  const { ethers } = window;
+  if (!ethers) {
+    statusEl.textContent = "Status: ethers library failed to load";
+    return;
   }
-];
 
-/* ================= STATE ================= */
-let provider, signer, contract;
+  const contractAddress = "0x0674873cF7Ca21d0d88cD075C0E52Bc0853c1Ad6";
+  const SEPOLIA_CHAIN_ID = 11155111;
 
-/* ================= CONNECT ================= */
-document.getElementById("connectButton").onclick = async () => {
-  if (!window.ethereum) return alert("MetaMask not found");
+  const contractABI = [
+    {
+      "inputs":[
+        {"internalType":"uint256","name":"batchId","type":"uint256"},
+        {"internalType":"int256","name":"temperature","type":"int256"},
+        {"internalType":"int256","name":"humidity","type":"int256"},
+        {"internalType":"string","name":"location","type":"string"}
+      ],
+      "name":"addSensorData",
+      "outputs":[],
+      "stateMutability":"nonpayable",
+      "type":"function"
+    },
+    {
+      "inputs":[
+        {"internalType":"uint256","name":"batchId","type":"uint256"},
+        {"internalType":"string","name":"productName","type":"string"},
+        {"internalType":"uint256","name":"quantity","type":"uint256"}
+      ],
+      "name":"createBatch",
+      "outputs":[],
+      "stateMutability":"nonpayable",
+      "type":"function"
+    },
+    {
+      "inputs":[
+        {"internalType":"uint256","name":"batchId","type":"uint256"},
+        {"internalType":"bool","name":"passedInspection","type":"bool"}
+      ],
+      "name":"markAsArrived",
+      "outputs":[],
+      "stateMutability":"nonpayable",
+      "type":"function"
+    },
+    {
+      "inputs":[{"internalType":"address","name":"producer","type":"address"}],
+      "name":"registerProducer",
+      "outputs":[],
+      "stateMutability":"nonpayable",
+      "type":"function"
+    },
+    {
+      "inputs":[{"internalType":"address","name":"transporter","type":"address"}],
+      "name":"registerTransporter",
+      "outputs":[],
+      "stateMutability":"nonpayable",
+      "type":"function"
+    },
+    {
+      "inputs":[{"internalType":"address","name":"distributor","type":"address"}],
+      "name":"registerDistributor",
+      "outputs":[],
+      "stateMutability":"nonpayable",
+      "type":"function"
+    },
+    {
+      "inputs":[{"internalType":"address","name":"retailer","type":"address"}],
+      "name":"registerRetailer",
+      "outputs":[],
+      "stateMutability":"nonpayable",
+      "type":"function"
+    },
+    {
+      "inputs":[
+        {"internalType":"uint256","name":"batchId","type":"uint256"},
+        {"internalType":"address","name":"newOwner","type":"address"}
+      ],
+      "name":"transferOwnership",
+      "outputs":[],
+      "stateMutability":"nonpayable",
+      "type":"function"
+    },
+    {
+      "inputs":[{"internalType":"uint256","name":"batchId","type":"uint256"}],
+      "name":"getBatchHistory",
+      "outputs":[
+        {
+          "components":[
+            {"internalType":"uint256","name":"batchId","type":"uint256"},
+            {"internalType":"string","name":"productName","type":"string"},
+            {"internalType":"uint256","name":"quantity","type":"uint256"},
+            {"internalType":"address","name":"currentOwner","type":"address"},
+            {"internalType":"bool","name":"created","type":"bool"},
+            {"internalType":"bool","name":"arrived","type":"bool"},
+            {"internalType":"bool","name":"passedInspection","type":"bool"},
+            {
+              "components":[
+                {"internalType":"int256","name":"temperature","type":"int256"},
+                {"internalType":"int256","name":"humidity","type":"int256"},
+                {"internalType":"string","name":"location","type":"string"},
+                {"internalType":"uint256","name":"timestamp","type":"uint256"}
+              ],
+              "internalType":"struct FreshChain.SensorLog[]",
+              "name":"sensorHistory",
+              "type":"tuple[]"
+            },
+            {
+              "internalType":"address[]",
+              "name":"ownershipHistory",
+              "type":"address[]"
+            }
+          ],
+          "internalType":"struct FreshChain.Batch",
+          "name":"",
+          "type":"tuple"
+        }
+      ],
+      "stateMutability":"view",
+      "type":"function"
+    }
+  ];
 
-  await window.ethereum.request({ method: "eth_requestAccounts" });
-  provider = new ethers.providers.Web3Provider(window.ethereum);
-  signer = provider.getSigner();
-  contract = new ethers.Contract(contractAddress, contractABI, signer);
+  let provider, signer, contract;
 
-  document.getElementById("accountDisplay").innerText =
-    "Connected: " + await signer.getAddress();
+  function requireContract() {
+    if (!contract) {
+      alert("Please connect MetaMask first.");
+      throw new Error("Contract not initialized");
+    }
+  }
 
-  const net = await provider.getNetwork();
-  document.getElementById("networkDisplay").innerText =
-    "Network: " + net.name;
+  connectBtn.onclick = async () => {
+    try {
+      statusEl.textContent = "Status: connecting…";
 
-  if (net.chainId !== SEPOLIA_CHAIN_ID)
-    alert("⚠️ Please switch MetaMask to Sepolia network");
-};
+      if (!window.ethereum) {
+        statusEl.textContent = "Status: MetaMask not found";
+        alert("MetaMask extension is not installed.");
+        return;
+      }
 
-/* ================= ROLE UI ================= */
-roleSelect.onchange = () => {
-  ["admin","producer","transporter","distributor","retailer","customer"]
-    .forEach(r => document.getElementById(r+"Section").style.display="none");
-  if (roleSelect.value)
-    document.getElementById(roleSelect.value+"Section").style.display="block";
-};
+      await window.ethereum.request({ method: "eth_requestAccounts" });
 
-/* ================= FUNCTIONS ================= */
-async function registerProducer() {
-  await (await contract.registerProducer(producerAddress.value)).wait();
-  alert("Producer registered");
-}
-async function registerTransporter() {
-  await (await contract.registerTransporter(transporterAddress.value)).wait();
-  alert("Transporter registered");
-}
-async function registerDistributor() {
-  await (await contract.registerDistributor(distributorAddress.value)).wait();
-  alert("Distributor registered");
-}
-async function registerRetailer() {
-  await (await contract.registerRetailer(retailerAddress.value)).wait();
-  alert("Retailer registered");
-}
-async function createBatch() {
-  await (await contract.createBatch(
-    batchIdInput.value,
-    productNameInput.value,
-    quantityInput.value
-  )).wait();
-  alert("Batch created");
-}
-async function addSensorData() {
-  await (await contract.addSensorData(
-    sensorBatchIdInput.value,
-    temperatureInput.value,
-    humidityInput.value,
-    locationInput.value
-  )).wait();
-  alert("Sensor data added");
-}
-async function transferOwnership() {
-  await (await contract.transferOwnership(
-    transferBatchIdInput.value,
-    newOwnerInput.value
-  )).wait();
-  alert("Ownership transferred");
-}
-async function markAsArrived() {
-  await (await contract.markAsArrived(
-    retailerBatchIdInput.value,
-    inspectionResult.value === "true"
-  )).wait();
-  alert("Arrival marked");
-}
-async function viewHistory() {
-  const b = await contract.getBatchHistory(historyBatchIdInput.value);
-  historyOutput.textContent = JSON.stringify(b, null, 2);
-}
+      provider = new ethers.providers.Web3Provider(window.ethereum);
+      signer   = provider.getSigner();
+      contract = new ethers.Contract(contractAddress, contractABI, signer);
+
+      const account = await signer.getAddress();
+      accountEl.textContent = "Connected: " + account;
+
+      const net = await provider.getNetwork();
+      networkEl.textContent = "Network: " + net.name + " (chainId " + net.chainId + ")";
+
+      if (Number(net.chainId) !== SEPOLIA_CHAIN_ID) {
+        alert("⚠ Please switch MetaMask to the Sepolia test network.");
+      }
+
+      statusEl.textContent = "Status: connected.";
+    } catch (err) {
+      console.error(err);
+      statusEl.textContent = "Status: " + (err.message || err);
+    }
+  };
+
+  // Role UI
+  roleSelect.onchange = () => {
+    ["admin","producer","transporter","distributor","retailer","customer"]
+      .forEach(r => document.getElementById(r + "Section").style.display = "none");
+    if (roleSelect.value) {
+      document.getElementById(roleSelect.value + "Section").style.display = "block";
+    }
+    if (["producer","transporter","distributor","retailer","customer"].includes(roleSelect.value)) {
+      document.getElementById("customerSection").style.display = "block";
+    }
+  };
+
+  // Admin calls
+  window.registerProducer = async () => {
+    try {
+      requireContract();
+      await (await contract.registerProducer(producerAddress.value.trim())).wait();
+      alert("Producer registered");
+    } catch (e) { alert(e.message || e); }
+  };
+  window.registerTransporter = async () => {
+    try {
+      requireContract();
+      await (await contract.registerTransporter(transporterAddress.value.trim())).wait();
+      alert("Transporter registered");
+    } catch (e) { alert(e.message || e); }
+  };
+  window.registerDistributor = async () => {
+    try {
+      requireContract();
+      await (await contract.registerDistributor(distributorAddress.value.trim())).wait();
+      alert("Distributor registered");
+    } catch (e) { alert(e.message || e); }
+  };
+  window.registerRetailer = async () => {
+    try {
+      requireContract();
+      await (await contract.registerRetailer(retailerAddress.value.trim())).wait();
+      alert("Retailer registered");
+    } catch (e) { alert(e.message || e); }
+  };
+
+  // Producer
+  window.createBatch = async () => {
+    try {
+      requireContract();
+      await (await contract.createBatch(
+        Number(batchIdInput.value),
+        productNameInput.value,
+        Number(quantityInput.value)
+      )).wait();
+      alert("Batch created");
+    } catch (e) { alert(e.message || e); }
+  };
+
+  // Transporter
+  window.addSensorData = async () => {
+    try {
+      requireContract();
+      await (await contract.addSensorData(
+        Number(sensorBatchIdInput.value),
+        Number(temperatureInput.value),
+        Number(humidityInput.value),
+        locationInput.value
+      )).wait();
+      alert("Sensor data added");
+    } catch (e) { alert(e.message || e); }
+  };
+
+  // Distributor / owner
+  window.transferOwnership = async () => {
+    try {
+      requireContract();
+      await (await contract.transferOwnership(
+        Number(transferBatchIdInput.value),
+        newOwnerInput.value.trim()
+      )).wait();
+      alert("Ownership transferred");
+    } catch (e) { alert(e.message || e); }
+  };
+
+  // Retailer
+  window.markAsArrived = async () => {
+    try {
+      requireContract();
+      await (await contract.markAsArrived(
+        Number(retailerBatchIdInput.value),
+        inspectionResult.value === "true"
+      )).wait();
+      alert("Arrival marked");
+    } catch (e) { alert(e.message || e); }
+  };
+
+  // Customer
+  window.viewHistory = async () => {
+    try {
+      requireContract();
+      const b = await contract.getBatchHistory(Number(historyBatchIdInput.value));
+      historyOutput.textContent = JSON.stringify(b, null, 2);
+    } catch (e) { alert(e.message || e); }
+  };
+});
 </script>
 
 </body>
