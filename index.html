@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>FreshChain – Food Traceability</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 980px; margin: 24px auto; padding: 0 16px; }
+    button { cursor: pointer; padding: 8px 12px; margin: 6px 0; }
+    input, select { padding: 8px; margin: 6px 0; }
+    .row { margin-bottom: 10px; }
+    #status { white-space: pre-wrap; background: #f5f5f5; padding: 10px; border-radius: 8px; }
+    .warn { color: #b45309; }
+    .ok { color: #15803d; }
+    .err { color: #b91c1c; }
+  </style>
+</head>
+<body>
+  <h1>FreshChain – Food Traceability</h1>
+
+  <!-- Connect Wallet -->
+  <button id="connectButton">Connect MetaMask</button>
+  <p id="accountDisplay">Not connected</p>
+  <p id="networkDisplay">Network: -</p>
+  <div id="status">Status: ready</div>
+
+  <!-- Role selection -->
+  <h3>Select User Type</h3>
+  <select id="roleSelect">
+    <option value="">-- choose --</option>
+    <option value="admin">Admin</option>
+    <option value="producer">Producer</option>
+    <option value="transporter">Transporter</option>
+    <option value="distributor">Distributor</option>
+    <option value="retailer">Retailer</option>
+    <option value="customer">Customer</option>
+  </select>
+
+  <hr />
+
+  <!-- Admin section -->
+  <div id="adminSection" style="display:none;">
+    <h3>Admin – Register Roles</h3>
+
+    <div class="row">
+      <h4>Register Producer</h4>
+      <input id="producerAddress" placeholder="Producer address 0x..." size="55" />
+      <button id="btnRegisterProducer">Register Producer</button>
+    </div>
+
+    <div class="row">
+      <h4>Register Transporter</h4>
+      <input id="transporterAddress" placeholder="Transporter address 0x..." size="55" />
+      <button id="btnRegisterTransporter">Register Transporter</button>
+    </div>
+
+    <div class="row">
+      <h4>Register Distributor</h4>
+      <input id="distributorAddress" placeholder="Distributor address 0x..." size="55" />
+      <button id="btnRegisterDistributor">Register Distributor</button>
+    </div>
+
+    <div class="row">
+      <h4>Register Retailer</h4>
+      <input id="retailerAddress" placeholder="Retailer address 0x..." size="55" />
+      <button id="btnRegisterRetailer">Register Retailer</button>
+    </div>
+  </div>
+
+  <!-- Producer section -->
+  <div id="producerSection" style="display:none;">
+    <h3>Producer – Create Batch</h3>
+    <input id="batchIdInput" type="number" placeholder="Batch ID (e.g., 101)" />
+    <input id="productNameInput" type="text" placeholder="Product Name (e.g., Eggplant)" />
+    <input id="quantityInput" type="number" placeholder="Quantity (e.g., 100)" />
+    <button id="btnCreateBatch">Create Batch</button>
+  </div>
+
+  <!-- Transporter section -->
+  <div id="transporterSection" style="display:none;">
+    <h3>Transporter – Add Sensor Data</h3>
+    <input id="sensorBatchIdInput" type="number" placeholder="Batch ID (e.g., 101)" />
+    <input id="temperatureInput" type="number" placeholder="Temperature (°C) (int)" />
+    <input id="humidityInput" type="number" placeholder="Humidity (%) (int)" />
+    <input id="locationInput" type="text" placeholder="Location (e.g., Bursa)" />
+    <button id="btnAddSensorData">Add Sensor Data</button>
+  </div>
+
+  <!-- Distributor section -->
+  <div id="distributorSection" style="display:none;">
+    <h3>Ownership – Transfer</h3>
+    <input id="transferBatchIdInput" type="number" placeholder="Batch ID" />
+    <input id="newOwnerInput" type="text" placeholder="New owner address 0x..." size="55" />
+    <button id="btnTransferOwnership">Transfer Ownership</button>
+  </div>
+
+  <!-- Retailer section -->
+  <div id="retailerSection" style="display:none;">
+    <h3>Retailer – Final Inspection</h3>
+    <input id="retailerBatchIdInput" type="number" placeholder="Batch ID" />
+    <select id="inspectionResult">
+      <option value="true">Passed</option>
+      <option value="false">Failed</option>
+    </select>
+    <button id="btnMarkAsArrived">Mark As Arrived</button>
+  </div>
+
+  <!-- Customer / Anyone: View History -->
+  <div id="customerSection" style="display:none;">
+    <h3>Customer – View Batch History</h3>
+    <input id="historyBatchIdInput" type="number" placeholder="Batch ID" />
+    <button id="btnViewHistory">Get History</button>
+    <pre id="historyOutput"></pre>
+  </div>
+
+  <!-- Ethers.js -->
+  <script src="https://cdn.ethers.io/lib/ethers-5.2.umd.min.js"></script>
+
+  <script>
+    /*********** CONFIG ***********/
+    const contractAddress = "0x0674873cF7Ca21d0d88cD075C0E52Bc0853c1Ad6";
+
+    // Sepolia chainId = 11155111 (0xaa36a7)
+    const SEPOLIA_CHAIN_ID_DEC = 11155111;
+    const SEPOLIA_CHAIN_ID_HEX = "0xaa36a7";
+
+    const contractABI = [
+      {"inputs":[{"internalType":"uint256","name":"batchId","type":"uint256"},{"internalType":"int256","name":"temperature","type":"int256"},{"internalType":"int256","name":"humidity","type":"int256"},{"internalType":"string","name":"location","type":"string"}],"name":"addSensorData","outputs":[],"stateMutability":"nonpayable","type":"function"},
+      {"inputs":[{"internalType":"uint256","name":"batchId","type":"uint256"},{"internalType":"string","name":"productName","type":"string"},{"internalType":"uint256","name":"quantity","type":"uint256"}],"name":"createBatch","outputs":[],"stateMutability":"nonpayable","type":"function"},
+      {"inputs":[{"internalType":"uint256","name":"batchId","type":"uint256"},{"internalType":"bool","name":"passedInspection","type":"bool"}],"name":"markAsArrived","outputs":[],"stateMutability":"nonpayable","type":"function"},
+      {"inputs":[{"internalType":"address","name":"distributor","type":"address"}],"name":"registerDistributor","outputs":[],"stateMutability":"nonpayable","type":"function"},
+      {"inputs":[{"internalType":"address","name":"producer","type":"address"}],"name":"registerProducer","outputs":[],"stateMutability":"nonpayable","type":"function"},
+      {"inputs":[{"internalType":"address","name":"retailer","type":"address"}],"name":"registerRetailer","outputs":[],"stateMutability":"nonpayable","type":"function"},
+      {"inputs":[{"internalType":"address","name":"transporter","type":"address"}],"name":"registerTransporter","outputs":[],"stateMutability":"nonpayable","type":"function"},
+      {"inputs":[{"internalType":"uint256","name":"batchId","type":"uint256"},{"internalType":"address","name":"newOwner","type":"address"}],"name":"transferOwnership","outputs":[],"stateMutability":"nonpayable","type":"function"},
+      {"inputs":[],"stateMutability":"nonpayable","type":"constructor"},
+      {"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"batches","outputs":[{"internalType":"uint256","name":"batchId","type":"uint256"},{"internalType":"string","name":"productName","type":"string"},{"internalType":"uint256","name":"quantity","type":"uint256"},{"internalType":"address","name":"currentOwner","type":"address"},{"internalType":"bool","name":"created","type":"bool"},{"internalType":"bool","name":"arrived","type":"bool"},{"internalType":"bool","name":"passedInspection","type":"bool"}],"stateMutability":"view","type":"function"},
+      {"inputs":[{"internalType":"uint256","name":"batchId","type":"uint256"}],"name":"getBatchHistory","outputs":[{"components":[{"internalType":"uint256","name":"batchId","type":"uint256"},{"internalType":"string","name":"productName","type":"string"},{"internalType":"uint256","name":"quantity","type":"uint256"},{"internalType":"address","name":"currentOwner","type":"address"},{"internalType":"bool","name":"created","type":"bool"},{"internalType":"bool","name":"arrived","type":"bool"},{"internalType":"bool","name":"passedInspection","type":"bool"},{"components":[{"internalType":"int256","name":"temperature","type":"int256"},{"internalType":"int256","name":"humidity","type":"int256"},{"internalType":"string","name":"location","type":"string"},{"internalType":"uint256","name":"timestamp","type":"uint256"}],"internalType":"struct FreshChain.SensorLog[]","name":"sensorHistory","type":"tuple[]"},{"internalType":"address[]","name":"ownershipHistory","type":"address[]"}],"internalType":"struct FreshChain.Batch","name":"","type":"tuple"}],"stateMutability":"view","type":"function"},
+      {"inputs":[],"name":"owner","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},
+      {"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"userRoles","outputs":[{"internalType":"enum FreshChain.Roles","name":"","type":"uint8"}],"stateMutability":"view","type":"function"}
+    ];
+
+    /*********** STATE ***********/
+    let provider = null;
+    let signer = null;
+    let contract = null;
+    let currentAccount = null;
+
+    /*********** UI ***********/
+    const connectButton = document.getElementById("connectButton");
+    const accountDisplay = document.getElementById("accountDisplay");
+    const networkDisplay = document.getElementById("networkDisplay");
+    const statusBox = document.getElementById("status");
+    const roleSelect = document.getElementById("roleSelect");
+
+    function setStatus(msg, cls="") {
+      statusBox.className = cls;
+      statusBox.textContent = "Status: " + msg;
+      console.log(msg);
+    }
+
+    function requireConnected() {
+      if (!contract || !signer || !currentAccount) {
+        throw new Error("Wallet not connected. Click 'Connect MetaMask' first.");
+      }
+    }
+
+    function asUint(val, fieldName) {
+      const n = Number(val);
+      if (!Number.isFinite(n) || n < 0) throw new Error(`${fieldName} must be a non-negative number`);
+      return ethers.BigNumber.from(String(Math.trunc(n)));
+    }
+
+    function asInt(val, fieldName) {
+      const n = Number(val);
+      if (!Number.isFinite(n)) throw new Error(`${fieldName} must be a number`);
+      return ethers.BigNumber.from(String(Math.trunc(n))); // handles negative too
+    }
+
+    function asAddress(val, fieldName) {
+      const s = (val || "").trim();
+      if (!ethers.utils.isAddress(s)) throw new Error(`${fieldName} is not a valid address`);
+      return s;
+    }
+
+    async function ensureSepolia() {
+      const net = await provider.getNetwork();
+      networkDisplay.textContent = `Network: ${net.name} (chainId ${net.chainId})`;
+
+      if (net.chainId !== SEPOLIA_CHAIN_ID_DEC) {
+        setStatus("Wrong network. Please switch to Sepolia.", "warn");
+        // try switch
+        await window.ethereum.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: SEPOLIA_CHAIN_ID_HEX }]
+        });
+        const net2 = await provider.getNetwork();
+        networkDisplay.textContent = `Network: ${net2.name} (chainId ${net2.chainId})`;
+        if (net2.chainId !== SEPOLIA_CHAIN_ID_DEC) {
+          throw new Error("Still not on Sepolia after switch. Please switch manually in MetaMask.");
+        }
+      }
+    }
+
+    /*********** CONNECT ***********/
+    connectButton.addEventListener("click", async () => {
+      try {
+        if (!window.ethereum) {
+          alert("MetaMask not found! Install MetaMask extension.");
+          return;
+        }
+
+        setStatus("Requesting accounts...");
+        await window.ethereum.request({ method: "eth_requestAccounts" });
+
+        provider = new ethers.providers.Web3Provider(window.ethereum, "any");
+        signer = provider.getSigner();
+        currentAccount = await signer.getAddress();
+
+        accountDisplay.textContent = "Connected: " + currentAccount;
+
+        await ensureSepolia();
+
+        contract = new ethers.Contract(contractAddress, contractABI, signer);
+
+        setStatus("Connected & contract ready ✅", "ok");
+
+        // listen changes
+        window.ethereum.on("accountsChanged", async (accounts) => {
+          currentAccount = accounts?.[0] || null;
+          accountDisplay.textContent = currentAccount ? ("Connected: " + currentAccount) : "Not connected";
+          setStatus(currentAccount ? "Account changed." : "Disconnected.", currentAccount ? "warn" : "err");
+          if (currentAccount) {
+            signer = provider.getSigner();
+            contract = new ethers.Contract(contractAddress, contractABI, signer);
+          } else {
+            contract = null;
+          }
+        });
+
+        window.ethereum.on("chainChanged", async () => {
+          // reload provider state
+          provider = new ethers.providers.Web3Provider(window.ethereum, "any");
+          signer = provider.getSigner();
+          contract = new ethers.Contract(contractAddress, contractABI, signer);
+          try {
+            await ensureSepolia();
+            setStatus("Network changed. Ready ✅", "ok");
+          } catch (e) {
+            setStatus(e.message, "err");
+          }
+        });
+
+      } catch (err) {
+        console.error(err);
+        setStatus(err.message || "Connect failed", "err");
+      }
+    });
+
+    /*********** ROLE UI ***********/
+    roleSelect.addEventListener("change", () => {
+      const role = roleSelect.value;
+
+      document.getElementById("adminSection").style.display = (role === "admin") ? "block" : "none";
+      document.getElementById("producerSection").style.display = (role === "producer") ? "block" : "none";
+      document.getElementById("transporterSection").style.display = (role === "transporter") ? "block" : "none";
+      document.getElementById("distributorSection").style.display = (role === "distributor") ? "block" : "none";
+      document.getElementById("retailerSection").style.display = (role === "retailer") ? "block" : "none";
+
+      // history visible for everyone except empty selection
+      document.getElementById("customerSection").style.display = (role !== "") ? "block" : "none";
+    });
+
+    /*********** TX HELPERS ***********/
+    async function sendTx(txPromise, successMsg) {
+      requireConnected();
+      setStatus("Waiting for MetaMask confirmation...");
+      const tx = await txPromise;
+      setStatus("Tx sent. Waiting to be mined...\n" + tx.hash, "warn");
+      const receipt = await tx.wait();
+      setStatus(successMsg + "\nMined in block: " + receipt.blockNumber, "ok");
+      return receipt;
+    }
+
+    /*********** BUTTON HANDLERS ***********/
+    document.getElementById("btnRegisterProducer").addEventListener("click", async () => {
+      try {
+        const addr = asAddress(document.getElementById("producerAddress").value, "Producer address");
+        await sendTx(contract.registerProducer(addr), "Producer registered ✅ " + addr);
+      } catch (e) { setStatus(e.message, "err"); }
+    });
+
+    document.getElementById("btnRegisterTransporter").addEventListener("click", async () => {
+      try {
+        const addr = asAddress(document.getElementById("transporterAddress").value, "Transporter address");
+        await sendTx(contract.registerTransporter(addr), "Transporter registered ✅ " + addr);
+      } catch (e) { setStatus(e.message, "err"); }
+    });
+
+    document.getElementById("btnRegisterDistributor").addEventListener("click", async () => {
+      try {
+        const addr = asAddress(document.getElementById("distributorAddress").value, "Distributor address");
+        await sendTx(contract.registerDistributor(addr), "Distributor registered ✅ " + addr);
+      } catch (e) { setStatus(e.message, "err"); }
+    });
+
+    document.getElementById("btnRegisterRetailer").addEventListener("click", async () => {
+      try {
+        const addr = asAddress(document.getElementById("retailerAddress").value, "Retailer address");
+        await sendTx(contract.registerRetailer(addr), "Retailer registered ✅ " + addr);
+      } catch (e) { setStatus(e.message, "err"); }
+    });
+
+    document.getElementById("btnCreateBatch").addEventListener("click", async () => {
+      try {
+        const id = asUint(document.getElementById("batchIdInput").value, "Batch ID");
+        const name = (document.getElementById("productNameInput").value || "").trim();
+        const qty = asUint(document.getElementById("quantityInput").value, "Quantity");
+        if (!name) throw new Error("Product Name cannot be empty");
+        await sendTx(contract.createBatch(id, name, qty), "Batch created ✅ ID: " + id.toString());
+      } catch (e) { setStatus(e.message, "err"); }
+    });
+
+    document.getElementById("btnAddSensorData").addEventListener("click", async () => {
+      try {
+        const id = asUint(document.getElementById("sensorBatchIdInput").value, "Batch ID");
+        const temp = asInt(document.getElementById("temperatureInput").value, "Temperature");
+        const hum = asInt(document.getElementById("humidityInput").value, "Humidity");
+        const loc = (document.getElementById("locationInput").value || "").trim();
+        if (!loc) throw new Error("Location cannot be empty");
+        await sendTx(contract.addSensorData(id, temp, hum, loc), "Sensor data added ✅ Batch: " + id.toString());
+      } catch (e) { setStatus(e.message, "err"); }
+    });
+
+    document.getElementById("btnTransferOwnership").addEventListener("click", async () => {
+      try {
+        const id = asUint(document.getElementById("transferBatchIdInput").value, "Batch ID");
+        const newOwner = asAddress(document.getElementById("newOwnerInput").value, "New owner");
+        await sendTx(contract.transferOwnership(id, newOwner), "Ownership transferred ✅ Batch: " + id.toString());
+      } catch (e) { setStatus(e.message, "err"); }
+    });
+
+    document.getElementById("btnMarkAsArrived").addEventListener("click", async () => {
+      try {
+        const id = asUint(document.getElementById("retailerBatchIdInput").value, "Batch ID");
+        const passed = document.getElementById("inspectionResult").value === "true";
+        await sendTx(contract.markAsArrived(id, passed), `Arrival marked ✅ Batch: ${id.toString()} Passed: ${passed}`);
+      } catch (e) { setStatus(e.message, "err"); }
+    });
+
+    document.getElementById("btnViewHistory").addEventListener("click", async () => {
+      try {
+        requireConnected();
+        const id = asUint(document.getElementById("historyBatchIdInput").value, "Batch ID");
+        setStatus("Reading history...", "warn");
+        const batch = await contract.getBatchHistory(id);
+
+        // tuple -> readable
+        const output = {
+          batchId: batch.batchId.toString(),
+          productName: batch.productName,
+          quantity: batch.quantity.toString(),
+          currentOwner: batch.currentOwner,
+          created: batch.created,
+          arrived: batch.arrived,
+          passedInspection: batch.passedInspection,
+          sensorHistory: (batch.sensorHistory || []).map(s => ({
+            temperature: s.temperature.toString(),
+            humidity: s.humidity.toString(),
+            location: s.location,
+            timestamp: Number(s.timestamp.toString())
+          })),
+          ownershipHistory: batch.ownershipHistory || []
+        };
+
+        document.getElementById("historyOutput").textContent = JSON.stringify(output, null, 2);
+        setStatus("History loaded ✅", "ok");
+      } catch (e) {
+        setStatus(e.message, "err");
+      }
+    });
+  </script>
+</body>
+</html>
